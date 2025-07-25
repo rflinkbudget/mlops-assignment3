@@ -4,25 +4,34 @@ import torch
 import torch.nn as nn
 from sklearn.datasets import fetch_california_housing
 
-
+# Load sklearn model
 model = joblib.load("sklearn_model.joblib")
 coef = model.coef_
-intercept = model.intercept_
+intercept = model.intercept_  # float
 
+# Save unquantized params
 unquant_params = {"coef": coef, "intercept": intercept}
 joblib.dump(unquant_params, "unquant_params.joblib")
 
-scale = 255 / (np.max(coef) - np.min(coef))
-quantized_coef = np.round((coef - np.min(coef)) * scale).astype(np.uint8)
-quantized_intercept = np.round((intercept - np.min(coef)) * scale).astype(np.uint8)
+# Quantize only coef
+coef_min, coef_max = np.min(coef), np.max(coef)
+coef_scale = 255 / (coef_max - coef_min)
+quantized_coef = np.round((coef - coef_min) * coef_scale).astype(np.uint8)
 
-quant_params = {"coef": quantized_coef, "intercept": quantized_intercept}
+# Save quantized model
+quant_params = {
+    "coef": quantized_coef,
+    "coef_scale": coef_scale,
+    "coef_min": coef_min,
+    "intercept": intercept  # original, not quantized
+}
 joblib.dump(quant_params, "quant_params.joblib")
 
-# De-quantize and evaluate using PyTorch
-dequant_coef = quantized_coef.astype(np.float32) / scale + np.min(coef)
-dequant_intercept = quantized_intercept.astype(np.float32) / scale + np.min(coef)
+# Dequantize for test
+dequant_coef = quantized_coef.astype(np.float32) / coef_scale + coef_min
+dequant_intercept = intercept
 
+# Simple PyTorch model
 class SimpleModel(nn.Module):
     def __init__(self):
         super().__init__()
@@ -33,6 +42,7 @@ class SimpleModel(nn.Module):
     def forward(self, x):
         return self.linear(x)
 
+# Test inference
 data = fetch_california_housing()
 X_test = torch.tensor(data.data[:10], dtype=torch.float32)
 model = SimpleModel()
