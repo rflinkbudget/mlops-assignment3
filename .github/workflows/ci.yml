@@ -10,30 +10,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout docker_ci branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.9'
+      - name: Bring train.py from dev branch
+        run: |
+          git fetch origin dev:dev
+          git checkout dev -- train.py
+          ls -la
 
-    - name: Install dependencies
-      run: pip install scikit-learn joblib
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
 
-    - name: Run training
-      run: python dev/train.py
+      - name: Install dependencies
+        run: pip install scikit-learn joblib
 
-    - name: Build Docker image
-      run: docker build -t mlops-model:latest .
+      - name: Run training
+        run: python train.py    # now exists in the workspace (checked out from dev)
 
-    - name: Run prediction
-      run: docker run --rm mlops-model:latest
+      - name: Build Docker image
+        run: docker build -t mlops-model:latest .
 
-    - name: Login to DockerHub
-      run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+      - name: Run prediction
+        run: docker run --rm mlops-model:latest
 
-    - name: Push to DockerHub
-      run: |
-        docker tag mlops-model:latest your_dockerhub_username/mlops-model:latest
-        docker push your_dockerhub_username/mlops-model:latest
+      - name: Login to DockerHub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Push to DockerHub
+        run: |
+          docker tag mlops-model:latest ${{ secrets.DOCKER_USERNAME }}/mlops-model:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/mlops-model:latest
