@@ -22,7 +22,7 @@ jobs:
       run: pip install scikit-learn joblib
 
     - name: Run training
-      run: python train.py
+      run: python dev/train.py
 
     - name: Build Docker image
       run: docker build -t mlops-model:latest .
