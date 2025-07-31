@@ -10,38 +10,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # --- Checkout the docker_ci branch (CI code, Dockerfile, predict.py, etc.) ---
       - name: Checkout docker_ci branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # --- Bring ONLY train.py from the dev branch into the workspace ---
       - name: Bring train.py from dev branch
         run: |
           git fetch origin dev:dev
           git checkout dev -- train.py
+          echo "Pulled train.py from dev:"
+          ls -la train.py
+
+      # --- Ensure the local dataset is present to avoid Figshare 403 ---
+      - name: Verify local dataset exists
+        run: |
+          if [ ! -f "data/california_housing.npz" ]; then
+            echo "ERROR: data/california_housing.npz not found."
+            echo "Commit the dataset file to the repo to avoid external downloads in CI."
+            exit 1
+          fi
+          ls -la data
+
+      # --- (Optional) Show workspace for debugging ---
+      - name: Show files and working directory
+        run: |
+          pwd
           ls -la
 
+      # --- Python setup & dependency cache for speed ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # --- Install dependencies (use requirements.txt if you have it) ---
+      # If you maintain requirements.txt, replace the run command accordingly:
       - name: Install dependencies
-        run: pip install scikit-learn joblib
+        run: |
+          pip install --no-cache-dir scikit-learn joblib
+          # If quantization or torch is needed for predict, uncomment:
+          # pip install --no-cache-dir torch
 
-      - name: Run training
-        run: python train.py    # now exists in the workspace (checked out from dev)
+      # --- Run training (will read local NPZ in your train.py logic) ---
+      - name: Run python train.py
+        run: python train.py
 
+      # --- Build Docker image ---
       - name: Build Docker image
         run: docker build -t mlops-model:latest .
 
-      - name: Run prediction
+      # --- Run the container to verify predict.py works (must exit 0 on success) ---
+      - name: Run prediction (container verification)
         run: docker run --rm mlops-model:latest
 
+      # --- DockerHub authentication and push ---
       - name: Login to DockerHub
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-      - name: Push to DockerHub
+      - name: Push image to DockerHub
         run: |
           docker tag mlops-model:latest ${{ secrets.DOCKER_USERNAME }}/mlops-model:latest
           docker push ${{ secrets.DOCKER_USERNAME }}/mlops-model:latest
